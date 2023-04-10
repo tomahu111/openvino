@@ -105,7 +105,7 @@
 #include "nodes/normalize.h"
 #include "nodes/fake_quantize.h"
 #include "nodes/mha.h"
-
+#include "transformations/common_optimizations/keep_decompressions_in_fp32.hpp"
 #include "dnnl.hpp"
 #include <cpu/x64/cpu_isa_traits.hpp>
 
@@ -187,6 +187,7 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
     ov::pass::Manager manager;
     manager.set_per_pass_validation(false);
     manager.register_pass<ov::pass::InitNodeInfo>();
+    manager.register_pass<ov::pass::KeepDecompressionsInFP32>();  // so that Const + Decompression Converts are not const folded
 
     const bool useLpt = !defaultPrecisions.empty();
     if (useLpt) {
@@ -243,7 +244,10 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
         manager.register_pass<ngraph::pass::low_precision::ConvertSubtractConstant>(defaultPrecisions);
     }
     manager.register_pass<ov::pass::Validate>();
-    manager.register_pass<ov::pass::ConvertPrecision>(precisions, type_to_fuse);
+    type_to_fuse_map empty_fuse_map = {};
+    //  call ConvertPrecision with keep_precision_sensitive_in_fp32 = true
+    manager.register_pass<ov::pass::KeepDecompressionsInFP32>();  // so that Const + Decompression Converts are not converted to FP32 and constant folded
+    manager.register_pass<ov::pass::ConvertPrecision>(precisions, empty_fuse_map, true);
     manager.register_pass<ov::pass::EliminateConvert>();
     manager.register_pass<SwapConvertTranspose>();
     manager.register_pass<ConvertToInteraction>();
